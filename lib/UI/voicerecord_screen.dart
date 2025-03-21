@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import '../ext-services/permissions_handler_service.dart' as permissions;
-import '../ext-services/speechtotext_service.dart';
+import '../ext-services/record_audio_input.dart';
 
 class VoiceRecordScreen extends StatefulWidget {
   const VoiceRecordScreen({super.key});
@@ -10,7 +9,7 @@ class VoiceRecordScreen extends StatefulWidget {
 }
 
 class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
-  final SpeechToTextService _speechToTextService = SpeechToTextService();
+  final AudioRecordService _recordAudioService = AudioRecordService();
 
   String _speakprompt = 'Press the button and start speaking';
   bool _isListening = false;
@@ -19,44 +18,51 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
   @override
   void initState() {
     super.initState();
-    _checkPermissions();
+    _initServices();
   }
 
-  Future<void> _checkPermissions() async {
-    bool granted = await permissions.hasMicPermission();
-    setState(() {
-      _hasPermission = granted;
-    });
+  Future<void> _initServices() async {
+    // Initialize the recorder and check permissions
+    await _recordAudioService.initRecorder();
+    _hasPermission = await _recordAudioService.checkAndAskForMicPermission();
+    setState(() {}); // Update the UI
+  }
 
-    if (!granted) {
-      permissions.requestMicPermission();
-      granted = await permissions.hasMicPermission();
-      setState(() {
-        _hasPermission = granted;
-      });
-    }
+  @override
+  void dispose() {
+    // Clean up resources
+    _recordAudioService.dispose();
+    super.dispose();
   }
 
   void _toggleRecordButton() async {
+    debugPrint("Button pressed!");
+
     if (!_hasPermission) {
+      debugPrint("No microphone permission!");
       setState(() {
         _speakprompt = 'Microphone Permission Required';
       });
       return;
     }
 
+    if (!_hasPermission) {
+      debugPrint("No microphone permission!");
+      setState(() {
+        _speakprompt = 'Microphone Permission Required';
+      });
+      return;
+    }
     if (_isListening) {
-      _speechToTextService.stopListening();
+      debugPrint("Stopping Listening...");
+      await _recordAudioService.stopRecording();
       setState(() {
         _isListening = false;
-        _speakprompt = 'Press the mic and start speaking';
+        _speakprompt = 'Press the button and start speaking again';
       });
     } else {
-      await _speechToTextService.startListening((text) {
-        setState(() {
-          _speakprompt = text;
-        });
-      });
+      debugPrint("Listening...");
+      await _recordAudioService.startRecording();
       setState(() {
         _isListening = true;
         _speakprompt = 'Listening...';
