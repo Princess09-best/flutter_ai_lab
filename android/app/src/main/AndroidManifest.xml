@@ -3,8 +3,16 @@
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="flutter_ai_lab"
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+         <service
+        android:name="com.dooboolab.flutter_sound.ForegroundService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="microphone" /> 
         <activity
             android:name=".MainActivity"
             android:exported="true"

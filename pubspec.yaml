@@ -43,6 +43,7 @@ dependencies:
   provider: ^6.1.2
   flutter_sound: ^9.27.0
   path_provider: ^2.1.5
+  record: ^5.2.1
 
 dev_dependencies:
   flutter_test:

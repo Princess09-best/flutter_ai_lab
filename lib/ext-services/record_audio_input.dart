@@ -50,12 +50,10 @@ class AudioRecordService {
         codec: Codec.pcm16WAV,
         sampleRate: 16000,
         bitRate: 256000,
+        numChannels: 1,
       );
 
       debugPrint("Recording started: ${_recordedAudioFile.path}");
-
-      // Force at least 2 seconds of recording before allowing stop
-      await Future.delayed(Duration(seconds: 2));
     } catch (e) {
       debugPrint("Error starting recording: $e");
       throw Exception("Error starting recording");
@@ -71,6 +69,9 @@ class AudioRecordService {
         return;
       }
       // Stop the recorder
+      // Force at least 2 seconds of recording before allowing stop
+      // await Future.delayed(Duration(seconds: 3));
+      //debugPrint("✅ 3 seconds delay complete. Ready to stop now.");
       await _recorder!.stopRecorder();
       debugPrint("Recording stopped: ${_recordedAudioFile.path}");
       if (_recordedAudioFile.existsSync()) {
