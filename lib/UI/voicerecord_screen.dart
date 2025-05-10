@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import '../ext-services/record_audio_service.dart';
 import '../ext-services/google_speech_service.dart';
+import '../ext-services/gemini_service.dart';
 
 class VoiceRecordScreen extends StatefulWidget {
   const VoiceRecordScreen({super.key});
@@ -12,9 +14,12 @@ class VoiceRecordScreen extends StatefulWidget {
 class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
   final RecordAudioService _recordAudioService = RecordAudioService();
   final GoogleSpeechService _speechService = GoogleSpeechService();
+  final GeminiService _geminiService = GeminiService();
+  final FlutterTts _flutterTts = FlutterTts();
 
   String _speakprompt = 'Press the button and start speaking';
   String _transcription = '';
+  String _aiResponse = '';
   bool _isListening = false;
   bool _hasPermission = false;
   bool _isProcessing = false;
@@ -36,7 +41,21 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
   void dispose() {
     // Clean up resources
     _recordAudioService.dispose();
+    _flutterTts.stop();
     super.dispose();
+  }
+
+  Future<void> _speak(String text) async {
+    print('TTS: Speaking: $text');
+    try {
+      await _flutterTts.stop();
+      await _flutterTts.setLanguage('en-US');
+      await _flutterTts.setPitch(1.0);
+      var result = await _flutterTts.speak(text);
+      print('TTS: Speak result: $result');
+    } catch (e) {
+      print('TTS Error: $e');
+    }
   }
 
   void _toggleRecordButton() async {
@@ -76,9 +95,18 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
 
           setState(() {
             _transcription = transcript;
-            _speakprompt = 'Transcription complete';
+            _speakprompt = 'Processing with AI...';
+          });
+
+          // Process with Gemini
+          final aiResponse = await _geminiService.processUserInput(transcript);
+
+          setState(() {
+            _aiResponse = aiResponse;
+            _speakprompt = 'AI Response Ready';
             _isProcessing = false;
           });
+          _speak(aiResponse);
         } else {
           setState(() {
             _speakprompt = 'Failed to get recording file';
@@ -95,9 +123,10 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
     } else {
       try {
         debugPrint("Starting Listening...");
-        // Clear previous transcription
+        // Clear previous transcription and AI response
         setState(() {
           _transcription = '';
+          _aiResponse = '';
           _speakprompt = 'Listening...';
         });
 
@@ -160,7 +189,7 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Transcription:',
+                      'You said:',
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
@@ -169,6 +198,31 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
                     ),
                     SizedBox(height: 8),
                     Text(_transcription, style: TextStyle(fontSize: 18)),
+                  ],
+                ),
+              ),
+            ],
+            if (_aiResponse.isNotEmpty) ...[
+              SizedBox(height: 20),
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'AI Response:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(_aiResponse, style: TextStyle(fontSize: 18)),
                   ],
                 ),
               ),

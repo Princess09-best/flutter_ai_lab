@@ -47,6 +47,7 @@ dependencies:
   googleapis: ^14.0.0
   googleapis_auth: ^2.0.0
   dart_openai: ^5.1.0
+  google_generative_ai: ^0.2.0
 
 dev_dependencies:
   flutter_test:
