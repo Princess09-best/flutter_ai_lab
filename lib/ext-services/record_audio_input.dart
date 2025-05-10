@@ -10,6 +10,10 @@ class AudioRecordService {
   // The recorder object and the file where the audio will be saved
   FlutterSoundRecorder? _recorder;
   late File _recordedAudioFile;
+  bool _isInitialized = false;
+  bool _isRecording = false;
+  static const int _minRecordingDurationMs = 1000; // Minimum 1 second recording
+  DateTime? _recordingStartTime;
 
   //the constructor initializes the recorder object
   AudioRecordService() {
@@ -18,87 +22,167 @@ class AudioRecordService {
 
   // This method initializes the recorder
   Future<void> initRecorder() async {
-    await _recorder!.openRecorder();
-    await _recorder!.setSubscriptionDuration(Duration(milliseconds: 500));
+    try {
+      if (!_isInitialized) {
+        debugPrint("Initializing recorder...");
+        await _recorder!.openRecorder();
+        await _recorder!.setSubscriptionDuration(Duration(milliseconds: 500));
+        _isInitialized = true;
+        debugPrint("Recorder initialized successfully");
+
+        // Add a small delay after initialization
+        await Future.delayed(Duration(milliseconds: 100));
+      }
+    } catch (e) {
+      debugPrint("Error initializing recorder: $e");
+      throw Exception("Failed to initialize recorder: $e");
+    }
   }
 
   // This method checks if the app has permission to record audio
   Future<bool> checkAndAskForMicPermission() async {
     var status = await Permission.microphone.status;
     if (!status.isGranted) {
+      debugPrint("Requesting microphone permission...");
       status = await Permission.microphone.request();
+      debugPrint(
+        "Microphone permission status: ${status.isGranted ? 'granted' : 'denied'}",
+      );
     }
     return status.isGranted;
   }
 
   // This method starts recording audio
   Future<void> startRecording() async {
-    // Check if the app has permission to record audio
-    if (!await checkAndAskForMicPermission()) {
-      throw Exception("Permission denied");
-    }
-
-    // Create a new file to save the audio
     try {
+      if (!_isInitialized) {
+        debugPrint("Recorder not initialized, initializing now...");
+        await initRecorder();
+      }
+
+      if (!await checkAndAskForMicPermission()) {
+        throw Exception("Microphone permission denied");
+      }
+
+      if (_isRecording) {
+        debugPrint("Already recording, ignoring start request");
+        return;
+      }
+
       debugPrint("Starting recording...");
 
-      Directory tempDir = await getTemporaryDirectory();
-      _recordedAudioFile = File('${tempDir.path}/recorded_audio.wav');
+      // Use Documents directory instead of Temp directory
+      Directory documentsDir = await getApplicationDocumentsDirectory();
+      _recordedAudioFile = File('${documentsDir.path}/recorded_audio.wav');
 
+      // Ensure the file doesn't exist from a previous recording
+      if (_recordedAudioFile.existsSync()) {
+        await _recordedAudioFile.delete();
+      }
+
+      debugPrint("Starting recorder with file: ${_recordedAudioFile.path}");
       await _recorder!.startRecorder(
         toFile: _recordedAudioFile.path,
         codec: Codec.pcm16WAV,
-        sampleRate: 16000,
+        sampleRate: 44100, // Changed from 16000 to 44100 (CD quality)
         bitRate: 256000,
-        numChannels: 1,
+        numChannels: 2, // Changed from mono to stereo
       );
+      debugPrint("startRecorder call completed");
 
-      debugPrint("Recording started: ${_recordedAudioFile.path}");
+      _recordingStartTime = DateTime.now();
+      _isRecording = true;
+      debugPrint("Recording started successfully at: $_recordingStartTime");
+
+      // Add a small delay after starting to ensure recording begins
+      await Future.delayed(Duration(milliseconds: 100));
     } catch (e) {
       debugPrint("Error starting recording: $e");
-      throw Exception("Error starting recording");
+      throw Exception("Error starting recording: $e");
     }
   }
 
   // This method stops recording audio
   Future<void> stopRecording() async {
-    // Check if the recorder is recording before stopping
     try {
-      if (_recorder == null || !_recorder!.isRecording) {
-        debugPrint("no recording to stop");
+      if (_recorder == null) {
+        debugPrint("Recorder is null, cannot stop");
         return;
       }
-      // Stop the recorder
-      // Force at least 2 seconds of recording before allowing stop
-      // await Future.delayed(Duration(seconds: 3));
-      //debugPrint("✅ 3 seconds delay complete. Ready to stop now.");
-      await _recorder!.stopRecorder();
-      debugPrint("Recording stopped: ${_recordedAudioFile.path}");
-      if (_recordedAudioFile.existsSync()) {
-        // Check if the file was saved
-        debugPrint("Audio successfully saved at ${_recordedAudioFile.path}");
-        debugPrint("Audio file size: ${_recordedAudioFile.lengthSync()} bytes");
 
-        if (_recordedAudioFile.lengthSync() < 5000) {
-          // Less than 5KB is too small
+      if (!_isRecording) {
+        debugPrint("Not currently recording, cannot stop");
+        return;
+      }
+
+      debugPrint("Stopping recording...");
+      debugPrint(
+        "Recording duration so far: ${DateTime.now().difference(_recordingStartTime!).inMilliseconds}ms",
+      );
+
+      // Ensure minimum recording duration
+      if (_recordingStartTime != null) {
+        final recordingDuration = DateTime.now().difference(
+          _recordingStartTime!,
+        );
+        if (recordingDuration.inMilliseconds < _minRecordingDurationMs) {
           debugPrint(
-            " ERROR: Audio file is too small! Recording may have failed.",
+            "Recording too short (${recordingDuration.inMilliseconds}ms), waiting for minimum duration...",
+          );
+          await Future.delayed(
+            Duration(
+              milliseconds:
+                  _minRecordingDurationMs - recordingDuration.inMilliseconds,
+            ),
           );
         }
+      }
+
+      _isRecording = false;
+      debugPrint("Stopping recorder...");
+      await _recorder!.stopRecorder();
+      debugPrint("Recorder stopped");
+
+      // Wait for file to be written
+      debugPrint("Waiting for file to be written...");
+      await Future.delayed(Duration(milliseconds: 500));
+
+      if (_recordedAudioFile.existsSync()) {
+        final fileSize = _recordedAudioFile.lengthSync();
+        debugPrint("Audio file size: $fileSize bytes");
+
+        if (fileSize < 5000) {
+          throw Exception(
+            "Audio file is too small ($fileSize bytes). Recording may have failed.",
+          );
+        }
+        debugPrint("Recording completed successfully");
       } else {
-        debugPrint("Audio file was not saved");
+        throw Exception("Audio file was not saved");
       }
     } catch (e) {
       debugPrint("Error stopping recording: $e");
-      throw Exception("Error stopping recording");
+      throw Exception("Error stopping recording: $e");
+    } finally {
+      _recordingStartTime = null;
+      _isRecording = false;
     }
   }
 
   // This method disposes the recorder object
   Future<void> dispose() async {
     if (_recorder != null) {
+      if (_isRecording) {
+        debugPrint("Disposing while recording, stopping first...");
+        await stopRecording();
+      }
+      debugPrint("Closing recorder...");
       await _recorder!.closeRecorder();
       _recorder = null;
+      _isInitialized = false;
+      _recordingStartTime = null;
+      _isRecording = false;
+      debugPrint("Recorder disposed successfully");
     }
   }
 }

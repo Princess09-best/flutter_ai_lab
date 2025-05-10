@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../ext-services/record_audio_input.dart';
+import '../ext-services/record_audio_service.dart';
+import '../ext-services/google_speech_service.dart';
 
 class VoiceRecordScreen extends StatefulWidget {
   const VoiceRecordScreen({super.key});
@@ -9,11 +10,14 @@ class VoiceRecordScreen extends StatefulWidget {
 }
 
 class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
-  final AudioRecordService _recordAudioService = AudioRecordService();
+  final RecordAudioService _recordAudioService = RecordAudioService();
+  final GoogleSpeechService _speechService = GoogleSpeechService();
 
   String _speakprompt = 'Press the button and start speaking';
+  String _transcription = '';
   bool _isListening = false;
   bool _hasPermission = false;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -46,27 +50,67 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
       return;
     }
 
-    if (!_hasPermission) {
-      debugPrint("No microphone permission!");
-      setState(() {
-        _speakprompt = 'Microphone Permission Required';
-      });
+    if (_isProcessing) {
+      debugPrint("Still processing previous recording");
       return;
     }
+
     if (_isListening) {
-      debugPrint("Stopping Listening...");
-      await _recordAudioService.stopRecording();
-      setState(() {
-        _isListening = false;
-        _speakprompt = 'Press the button and start speaking again';
-      });
+      try {
+        debugPrint("Stopping Listening...");
+        setState(() {
+          _isListening = false;
+          _speakprompt = 'Processing...';
+          _isProcessing = true;
+        });
+
+        // Stop recording
+        await _recordAudioService.stopRecording();
+
+        // Get file path
+        final filePath = _recordAudioService.getRecordedFilePath();
+        if (filePath != null) {
+          // Transcribe audio
+          debugPrint("Transcribing audio from: $filePath");
+          final transcript = await _speechService.transcribeAudio(filePath);
+
+          setState(() {
+            _transcription = transcript;
+            _speakprompt = 'Transcription complete';
+            _isProcessing = false;
+          });
+        } else {
+          setState(() {
+            _speakprompt = 'Failed to get recording file';
+            _isProcessing = false;
+          });
+        }
+      } catch (e) {
+        debugPrint("Error processing recording: $e");
+        setState(() {
+          _speakprompt = 'Error: $e';
+          _isProcessing = false;
+        });
+      }
     } else {
-      debugPrint("Listening...");
-      await _recordAudioService.startRecording();
-      setState(() {
-        _isListening = true;
-        _speakprompt = 'Listening...';
-      });
+      try {
+        debugPrint("Starting Listening...");
+        // Clear previous transcription
+        setState(() {
+          _transcription = '';
+          _speakprompt = 'Listening...';
+        });
+
+        await _recordAudioService.startRecording();
+        setState(() {
+          _isListening = true;
+        });
+      } catch (e) {
+        debugPrint("Error starting recording: $e");
+        setState(() {
+          _speakprompt = 'Error: $e';
+        });
+      }
     }
   }
 
@@ -74,31 +118,63 @@ class _VoiceRecordScreenState extends State<VoiceRecordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text("AI Voice Assistant")),
-      body: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            _speakprompt,
-            style: TextStyle(fontSize: 24.0, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 30.0),
-          GestureDetector(
-            onTap: _toggleRecordButton,
-            child: CircleAvatar(
-              radius: 40.0,
-              backgroundColor:
-                  _isListening
-                      ? Colors.red
-                      : (_hasPermission ? Colors.blue : Colors.grey),
-              child: Icon(
-                _isListening ? Icons.mic_off : Icons.mic,
-                size: 40.0,
-                color: Colors.white,
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              _speakprompt,
+              style: TextStyle(fontSize: 20.0, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 30.0),
+            GestureDetector(
+              onTap: _toggleRecordButton,
+              child: CircleAvatar(
+                radius: 40.0,
+                backgroundColor:
+                    _isProcessing
+                        ? Colors.orange
+                        : (_isListening
+                            ? Colors.red
+                            : (_hasPermission ? Colors.blue : Colors.grey)),
+                child: Icon(
+                  _isProcessing
+                      ? Icons.hourglass_bottom
+                      : (_isListening ? Icons.mic_off : Icons.mic),
+                  size: 40.0,
+                  color: Colors.white,
+                ),
               ),
             ),
-          ),
-        ],
+            SizedBox(height: 40.0),
+            if (_transcription.isNotEmpty) ...[
+              Container(
+                padding: EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Transcription:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.blue[800],
+                      ),
+                    ),
+                    SizedBox(height: 8),
+                    Text(_transcription, style: TextStyle(fontSize: 18)),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
